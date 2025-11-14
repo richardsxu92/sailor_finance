@@ -154,8 +154,8 @@ Other.get("/cmc/c1", async (req, res) => {
 // 辅助函数：批量获取代币价格（与poolapi.js中的fetchPriceBatch类似）
 async function fetchPriceBatchForCMC() {
   const { getTokenContract, getUSDAddresses } = require("./config/config.js");
-  const token_contract = getTokenContract();
-  const usd = getUSDAddresses();
+  const token_contract = getTokenContract() || {};
+  const usd = getUSDAddresses() || [];
   const result = {};
 
   try {
@@ -173,17 +173,21 @@ async function fetchPriceBatchForCMC() {
 
     // 将返回的数据转换为 symbolToPriceMap
     const symbolToPriceMap = {};
-    if (priceData.success && priceData.data) {
+    if (priceData && priceData.success && Array.isArray(priceData.data)) {
       for (const row of priceData.data) {
-        symbolToPriceMap[row.symbol] = {
-          price: row.price,
-          dailychange: row.dailychange,
-        };
+        if (row && row.symbol) {
+          symbolToPriceMap[row.symbol] = {
+            price: row.price || 0,
+            dailychange: row.dailychange || 0,
+          };
+        }
       }
     }
 
     for (const contract_addr in token_contract) {
       const symbol = token_contract[contract_addr];
+      if (!symbol) continue;
+      
       let w_symbol = symbol;
 
       if (contract_addr.toLowerCase() == "0x541fd749419ca806a8bc7da8ac23d346f2df8b77") {
@@ -205,7 +209,7 @@ async function fetchPriceBatchForCMC() {
           dailychange: symbolToPriceMap[symbol].dailychange,
         };
       } else {
-        result[contract_addr] = {};
+        result[contract_addr] = { symbol: w_symbol, price: 0, dailychange: 0 };
       }
     }
   } catch (error) {
@@ -226,13 +230,22 @@ Other.get("/cmc/c3", async (req, res) => {
     const WSEI_ADDRESS = "0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7";
     
     // 获取当前周的奖励池信息
-    const POOLS = GetPools();
+    const POOLS = GetPools() || {};
     
     // 批量获取所有代币价格
-    const pricesData = await fetchPriceBatchForCMC() || {};
+    const pricesData = await fetchPriceBatchForCMC();
+    
+    // 确保 pricesData 不为 null 或 undefined
+    if (!pricesData || typeof pricesData !== 'object') {
+      console.error("pricesData is invalid:", pricesData);
+      return res.status(500).send({
+        error: "Failed to fetch price data",
+        message: "Price data is unavailable"
+      });
+    }
     
     // 获取SEI价格对象
-    const sei_price = pricesData["0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7"];
+    const sei_price = pricesData["0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7"] || { price: 0 };
 
     const pools = [];
     let skip = 0;
