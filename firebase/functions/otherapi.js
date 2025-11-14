@@ -44,6 +44,7 @@ const zealy_apiKey = "bfa1fcf6c2da8ecebbabc8f7fd09cfb2";
 Other.get("/cmc/c1", async (req, res) => {
   try {
     ensureDbConnection();
+    const { getTokenByAddress } = require("./config/config.js");
     const result = {};
     let skip = 0;
 
@@ -95,6 +96,16 @@ Other.get("/cmc/c1", async (req, res) => {
         const poolId = pool.id;
         const token0 = pool.token0;
         const token1 = pool.token1;
+        
+        // 检查token0和token1是否都在TOKENS配置中
+        const token0Config = getTokenByAddress(token0.id);
+        const token1Config = getTokenByAddress(token1.id);
+        
+        // 如果任一token不在配置中，跳过这个池子
+        if (!token0Config || !token1Config) {
+          continue;
+        }
+        
         const sqrtPrice = pool.sqrtPrice;
         
         // 计算 last_price: (sqrtPrice / 2^96)^2
@@ -152,6 +163,12 @@ async function fetchPriceBatchForCMC() {
     const response = await fetch(
       "https://asia-southeast1-ktx-finance-2.cloudfunctions.net/sailor_otherapi/getTokenPrices"
     );
+    
+    if (!response.ok) {
+      console.error("Failed to fetch prices, status:", response.status);
+      return result;
+    }
+    
     const priceData = await response.json();
 
     // 将返回的数据转换为 symbolToPriceMap
@@ -212,7 +229,7 @@ Other.get("/cmc/c3", async (req, res) => {
     const POOLS = GetPools();
     
     // 批量获取所有代币价格
-    const pricesData = await fetchPriceBatchForCMC();
+    const pricesData = await fetchPriceBatchForCMC() || {};
     
     // 获取SEI价格对象
     const sei_price = pricesData["0xe30fedd158a2e3b13e9badaeabafc5516e95e8c7"];
@@ -274,8 +291,13 @@ Other.get("/cmc/c3", async (req, res) => {
         const token0FromConfig = getTokenByAddress(token0.id);
         const token1FromConfig = getTokenByAddress(token1.id);
         
-        const token0Symbol = token0FromConfig ? token0FromConfig.symbol : token0.symbol;
-        const token1Symbol = token1FromConfig ? token1FromConfig.symbol : token1.symbol;
+        // 如果任一token不在配置中，跳过这个池子
+        if (!token0FromConfig || !token1FromConfig) {
+          continue;
+        }
+        
+        const token0Symbol = token0FromConfig.symbol;
+        const token1Symbol = token1FromConfig.symbol;
 
         // 构建池子名称: sailor TOKEN0-TOKEN1-FEETIER
         const feeTierBps = new Decimal(feeTier).div(10000).toNumber(); // 转换为百分比形式
@@ -308,8 +330,8 @@ Other.get("/cmc/c3", async (req, res) => {
         
         const token0_id = token0.id.toLowerCase();
         const token1_id = token1.id.toLowerCase();
-        const data0 = pricesData[token0_id];
-        const data1 = pricesData[token1_id];
+        const data0 = pricesData[token0_id] || {};
+        const data1 = pricesData[token1_id] || {};
 
         let token0PriceUsd = 1;
         let token1PriceUsd = 1;
